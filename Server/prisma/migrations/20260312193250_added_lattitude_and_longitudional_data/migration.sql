@@ -1,0 +1,13 @@
+-- AlterTable
+ALTER TABLE "Kisaan" ADD COLUMN     "lat" DOUBLE PRECISION,
+ADD COLUMN     "long" DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "Organisation" ADD COLUMN     "gstNumber" TEXT,
+ADD COLUMN     "lat" DOUBLE PRECISION,
+ADD COLUMN     "long" DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "Vyapari" ADD COLUMN     "gstNumber" TEXT,
+ADD COLUMN     "lat" DOUBLE PRECISION,
+ADD COLUMN     "long" DOUBLE PRECISION;

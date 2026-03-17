@@ -1,0 +1,104 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Kisaan {
+  id            Int                 @id @default(autoincrement())
+  name          String
+  email         String?             @unique
+  password      String
+  address       String
+  phone         String              @unique
+  lat           Float?
+  long          Float?
+  refreshToken  String?
+  organisations KisanOrganisation[]
+  vyaparis      KisanVyapari[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deleted_At DateTime?
+}
+
+model Vyapari {
+  id            Int                   @id @default(autoincrement())
+  name          String
+  email         String                @unique
+  password      String
+  address       String
+  phone         String                @unique
+  lat           Float?
+  long          Float?
+  gstNumber     String?
+  refreshToken  String?
+  kisans        KisanVyapari[]
+  organisations OrganisationVyapari[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deleted_At DateTime?
+}
+
+model Organisation {
+  id           Int                        @id @default(autoincrement())
+  name         String
+  email        String                     @unique
+  password     String
+  address      String
+  phone        String                     @unique
+  lat          Float?
+  long         Float?
+  gstNumber     String?
+  refreshToken String?
+  kisans       KisanOrganisation[]
+  buyers       OrganisationOrganisation[] @relation("OrgBuy")
+  sellers      OrganisationOrganisation[] @relation("OrgSell")
+  vyaparis     OrganisationVyapari[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deleted_At DateTime?
+}
+
+model KisanVyapari {
+  id        Int     @id @default(autoincrement())
+  kisanId   Int
+  vyapariId Int
+  kisan     Kisaan  @relation(fields: [kisanId], references: [id])
+  vyapari   Vyapari @relation(fields: [vyapariId], references: [id])
+
+  @@unique([kisanId, vyapariId])
+}
+
+model KisanOrganisation {
+  id             Int          @id @default(autoincrement())
+  kisanId        Int
+  organisationId Int
+  kisan          Kisaan       @relation(fields: [kisanId], references: [id])
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  @@unique([kisanId, organisationId])
+}
+
+model OrganisationVyapari {
+  id             Int          @id @default(autoincrement())
+  organisationId Int
+  vyapariId      Int
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  vyapari        Vyapari      @relation(fields: [vyapariId], references: [id])
+
+  @@unique([organisationId, vyapariId])
+}
+
+model OrganisationOrganisation {
+  id       Int          @id @default(autoincrement())
+  buyerId  Int
+  sellerId Int
+  buyer    Organisation @relation("OrgBuy", fields: [buyerId], references: [id])
+  seller   Organisation @relation("OrgSell", fields: [sellerId], references: [id])
+
+  @@unique([buyerId, sellerId])
+}
