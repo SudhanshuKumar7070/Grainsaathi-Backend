@@ -58,3 +58,5 @@ uploads/
 
 
 /generated/prisma
+# context to  agent
+plan/*

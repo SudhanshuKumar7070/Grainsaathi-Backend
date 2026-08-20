@@ -8,6 +8,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum isRegistered{
+  PENDING
+  REJECTED
+  ACCEPTED
+}
 model Kisaan {
   id            Int                 @id @default(autoincrement())
   name          String
@@ -23,6 +28,8 @@ model Kisaan {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deleted_At DateTime?
+  tickets    RegistrationTaskTicket[]
+  receipts   Receipt[]
 }
 
 model Vyapari {
@@ -41,7 +48,11 @@ model Vyapari {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deleted_At DateTime?
+  registrationStatus isRegistered @default(PENDING)
+  tickets            RegistrationTaskTicket[]
+  crops              Crops[]
 }
+
 
 model Organisation {
   id           Int                        @id @default(autoincrement())
@@ -61,6 +72,35 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deleted_At DateTime?
+  registrationStatus isRegistered @default(PENDING)
+  tickets    RegistrationTaskTicket[]
+  crops      Crops[]
+}
+
+model Crops {
+  id              Int           @id @default(autoincrement())
+  cropName        String
+  priceInPaise    Int
+  quantityQuintal Float?
+  traderId        Int?
+  organisationId  Int?
+  trader          Vyapari?      @relation(fields: [traderId], references: [id])
+  organisation    Organisation? @relation(fields: [organisationId], references: [id])
+  deletedAt       DateTime?
+  receipts        Receipt[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Receipt {
+  id           Int      @id @default(autoincrement())
+  cropId       Int
+  crop         Crops    @relation(fields: [cropId], references: [id])
+  cropPrice    Int
+  farmerId     Int
+  farmer       Kisaan   @relation(fields: [farmerId], references: [id])
+  cropQuantity Float
+  createdAt    DateTime @default(now())
 }
 
 model KisanVyapari {
@@ -101,4 +141,30 @@ model OrganisationOrganisation {
   seller   Organisation @relation("OrgSell", fields: [sellerId], references: [id])
 
   @@unique([buyerId, sellerId])
+}
+
+enum TicketStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+  FAILED
+}
+
+model RegistrationTaskTicket {
+  id          Int      @id @default(autoincrement())
+  vyapariId   Int?     
+  kisaanId    Int?
+  orgId       Int?
+  
+  vyapari     Vyapari? @relation(fields: [vyapariId], references: [id])
+  kisaan      Kisaan?  @relation(fields: [kisaanId], references: [id])
+  org         Organisation? @relation(fields: [orgId], references: [id])
+  
+  status      TicketStatus @default(PENDING)
+  
+  employeeId  Int?     
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

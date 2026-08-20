@@ -1,27 +1,27 @@
+import { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { AsyncHandler } from "../utils/AsynHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
 
-// list all crops listed on the basis of current location of the farmer
-
-const getCropsOnDistance = AsyncHandler(async (req, res) => {
-  const userLocation = req.query;
-  const cropName = req.params.cropName;
+const getCropsOnDistance = AsyncHandler(async (req: Request, res: Response) => {
+  const userLocation: any = req.query;
+  const cropNameParam = req.params.cropName;
+  const cropName = Array.isArray(cropNameParam) ? cropNameParam[0] : cropNameParam;
   const maxPrice = req.query.maxPrice ? Number(req.query.maxPrice) : null;
-  const minPrice = req.query.maxPrice ? Number(req.query.minPrice) : null;
+  const minPrice = req.query.minPrice ? Number(req.query.minPrice) : null;
 
-  if (!cropName || !cropName.trim())
-    throw new ApiError(403, "crop name is not available");
+  if (!cropName || typeof cropName !== "string" || !cropName.trim())
+    throw new ApiError(400, "crop name is not available");
   if (!userLocation || !userLocation.lat || !userLocation.long)
-    throw new ApiError(403, "user's location is not available at the moement");
+    throw new ApiError(400, "user's location is not available at the moment");
   const lat = Number(userLocation.lat);
   const long = Number(userLocation.long);
   if (isNaN(lat) || isNaN(long)) throw new ApiError(400, "Invalid coordinates");
   if (!req.user || !req.user.id)
-    throw new ApiError(402, "user not authenticated");
-  const userId = req.user.id;
-  const crops = await prisma.$queryRaw`
+    throw new ApiError(401, "user not authenticated");
+
+  const crops: any[] = await prisma.$queryRaw`
 SELECT
   buyers.id,
   buyers.type,
@@ -57,11 +57,12 @@ LIMIT 20;
 `;
   if (!crops.length)
     throw new ApiError(
-      500,
-      "something went wrong in fetching crops at the moment",
+      404,
+      "no crops found matching criteria",
     );
   return res
     .status(200)
-    .json(new ApiResponse(200, crops, "crops fetchd successfully"));
+    .json(new ApiResponse(200, crops, "crops fetched successfully"));
 });
+
 export { getCropsOnDistance };
