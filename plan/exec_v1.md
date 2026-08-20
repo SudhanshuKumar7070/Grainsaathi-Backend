@@ -626,7 +626,7 @@ cron.schedule("0 * * * *", async () => {
 
 ### 5.1 — Admin controller
 
-**File**: [MODIFY] [admin.controller.js](file:///c:/Users/91707/OneDrive/Desktop/CODES/GrainSaathiBackend/Server/Controller/admin.controller.js)
+**File**: [MODIFY] `Server/Controller/admin.controller.ts`
 
 Implement:
 ```js
@@ -650,14 +650,11 @@ unbanUser = AsyncHandler(async (req, res) => { ... })
 
 // Delete a crop listing or contract (moderation)
 moderatePost = AsyncHandler(async (req, res) => { ... })
-
-// Platform analytics
-getAnalytics = AsyncHandler(async (req, res) => { ... })
 ```
 
 ### 5.2 — gs_loginId generation utility
 
-**File**: [NEW] `Server/utils/gsLoginGenerator.js`
+**File**: [NEW] `Server/utils/gsLoginGenerator.ts`
 
 Generate unique platform IDs like `GS-VY-00123` (for Vyapari) or `GS-ORG-00456` (for Organisation):
 ```js
@@ -669,7 +666,7 @@ export const generateGsLoginId = (role, id) => {
 
 ### 5.3 — Admin routes
 
-**File**: [MODIFY] `Server/Route/admin.route.js`
+**File**: [MODIFY] `Server/Route/admin.route.ts`
 
 ```
 GET    /api/v1/admin/tickets                → getTickets
@@ -678,39 +675,40 @@ POST   /api/v1/admin/tickets/:id/approve    → approveRegistration
 POST   /api/v1/admin/tickets/:id/reject     → rejectRegistration
 POST   /api/v1/admin/users/:id/ban          → banUser
 POST   /api/v1/admin/users/:id/unban        → unbanUser
-DELETE /api/v1/admin/posts/:id              → moderatePost
-GET    /api/v1/admin/analytics              → getAnalytics
+POST   /api/v1/admin/posts/:id/moderate     → moderatePost
 ```
 
 All routes: `verifyJwt` + `authorizeRoles("admin", "superadmin")`
 
-**File**: [MODIFY] [app.js](file:///c:/Users/91707/OneDrive/Desktop/CODES/GrainSaathiBackend/Server/app.js) — Register admin routes.
+**File**: [MODIFY] `Server/app.ts` — Register admin routes.
 
 ### 5.4 — SuperAdmin controller
 
-**File**: [NEW] `Server/Controller/superadmin.controller.js`
+**File**: [NEW] `Server/Controller/superadmin.controller.ts`
 
 ```js
 createAdmin    → Create admin account with generated gs_loginId
 deactivateAdmin → Set isActive = false
 listAdmins     → List all admins with status
+getAnalytics   → Fetch platform analytics (Contracts)
 ```
 
 ### 5.5 — SuperAdmin routes
 
-**File**: [MODIFY] `Server/Route/superadmin.route.js`
+**File**: [MODIFY] `Server/Route/superadmin.route.ts`
 
 ```
 POST   /api/v1/superadmin/admin/create         → createAdmin
 POST   /api/v1/superadmin/admin/:id/deactivate  → deactivateAdmin
 GET    /api/v1/superadmin/admins                → listAdmins
+GET    /api/v1/superadmin/analytics             → getAnalytics
 ```
 
 All routes: `verifyJwt` + `authorizeRoles("superadmin")`
 
 ### 5.6 — BullMQ job for registration approval
 
-**File**: [MODIFY] `Server/Architecture/worker/notification.worker.js`
+**File**: [MODIFY] `Server/Architecture/worker/notification.worker.ts`
 
 Add handler for `registration_approved`:
 ```js

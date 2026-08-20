@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import redisClient from "../../Config/redis.config.js";
 import sse_obj from "../../SSE/sse_store.js";
 import prisma from "../../lib/prisma.js";
+import { phoneMessageService } from "../../Interface/phone_message.interface.js";
 
 const notificationWorker = new Worker(
   "notification_queue",
@@ -51,6 +52,18 @@ const notificationWorker = new Worker(
         event: type || "contract_update",
         data: job.data
       });
+    }
+
+    if (job.name === "registration_approved") {
+      const { userId, gsLoginId, password, phone } = job.data;
+      
+      const message = `Welcome to GrainSaathi! Your registration is approved. Login ID: ${gsLoginId} Password: ${password}`;
+      
+      const smsSuccess = await phoneMessageService.sendSMS(phone, message);
+      
+      if (!smsSuccess) {
+        console.warn(`Failed to send SMS to ${phone} for user ${userId}`);
+      }
     }
   },
   {

@@ -37,5 +37,48 @@
 - [x] Configured TypeScript execution scripts (`dev`: `tsx watch index.ts`, `build`: `tsc`, `start`: `node dist/index.js`)
 - [x] Verified zero TypeScript compilation errors (`npx tsc --noEmit`) and successful build generation (`npm run build`)
 
+### Phase 1 - Schema Completion & Validation Layer
+- [x] Expanded database models (Admin, GsContract, SellContract, ChatRoom, ChatMessage, Document, Notification) in `schema.prisma`.
+- [x] Created modular Zod validation schemas (`auth.validator.ts`, `crop.validator.ts`, `contract.validator.ts`).
+- [x] Built and attached Zod validation middleware to Express routes.
+- [x] Generated Prisma client and migration scripts.
+
+### Phase 2 - Auth System Overhaul
+- [x] Added `gsLoginId` and `gsPassword` to `Vyapari` and `Organisation` in `schema.prisma`.
+- [x] Extracted `AuthService` to centralize token, OTP, and hashing logic.
+- [x] Refactored `user.controller.ts` to utilize credential-based logins for Enterprises/Traders.
+- [x] Implemented token rotation (`refresh_token`) and secure logout.
+- [x] Implemented robust RBAC middleware (`authorizeRoles`).
+- [x] Created `Admin` and `SuperAdmin` registration/login routes.
+- [x] Built `gsLoginGenerator` for deterministic platform ID generation.
+
+### Phase 3 - Crop Management & Geo-Search
+- [x] Standardized `addCropSchema` and `updateCropPriceSchema` validation.
+- [x] Refactored `add_crop` in `trader.controller.ts` to support `quantityQuintal`.
+- [x] Built `organisation.controller.ts` for full enterprise crop CRUD.
+- [x] Implemented `CropPriceHistory` tracking in all crop price update controllers.
+- [x] Re-architected `getCropsOnDistance` raw SQL to use safe `Prisma.sql` conditional injection.
+- [x] Added pagination and null-coordinate safety to the geo-search query.
+
+### Phase 4 - Contract System
+- [x] Adopted layered architecture (`Router -> Validator -> Controller -> Service -> Repo`).
+- [x] Built `contract.repo.ts` with atomic `$transaction` for acceptances.
+- [x] Built `contract.service.ts` handling SSE real-time notifications and contract expiry calculation.
+- [x] Created `contract.controller.ts` for handling requests across Kisaan, Vyapari, and Organisations.
+- [x] Unified Zod validation across the system enforcing strict `ReceiverRole` enumerations.
+- [x] Created `contract.route.ts` and wired it in `app.ts`.
+- [x] Added `contract_notification` handler in `notification.worker.ts` for background notifications.
+- [x] Implemented `contractExpiry.cron.ts` to auto-expire pending contracts.
+
+### Phase 5 - Admin & SuperAdmin System
+- [x] Abstracted Twilio SMS into `phone_message.interface.ts`.
+- [x] Built `gsLoginGenerator.ts` for standardized `GS-VY`, `GS-ORG`, `GS-AD` login IDs.
+- [x] Created `admin.validator.ts` and `superadmin.validator.ts` for input schemas.
+- [x] Implemented `Admin.repo.ts` and `SuperAdmin.repo.ts` with direct Prisma queries (including contract analytics for SuperAdmin).
+- [x] Built `admin.service.ts` to orchestrate ticket approvals, credentials generation, and moderation.
+- [x] Built `superadmin.service.ts` to manage admins.
+- [x] Complete controllers and routes (`admin.controller.ts`, `superadmin.controller.ts`, `admin.route.ts`, `superadmin.route.ts`).
+- [x] Connected BullMQ `notification.worker.ts` with the new phone message interface for `registration_approved` jobs.
+
 ## Next Stage
-- **Phase 1**: Schema completion & validation layer (adding Zod validator schemas and remaining Prisma models).
+- **Phase 6**: Receipt System (Generate, view, and download receipts for completed sell_contracts).
