@@ -29,6 +29,29 @@ const notificationWorker = new Worker(
       sse_obj.broadCastToServer("admin_notification", payload);
       console.log("Admin notification sent for ticket:", ticketId);
     }
+
+    if (job.name === "contract_notification") {
+      const { contractId, receiverId, receiverRole, type, title, body } = job.data;
+      
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: Number(receiverId),
+            userRole: receiverRole,
+            type: type || "CONTRACT",
+            title: title || "New Contract Update",
+            body: body || ""
+          }
+        });
+      } catch (err) {
+        console.error("Failed to persist notification:", err);
+      }
+      
+      sse_obj.sendToClient(receiverId.toString(), {
+        event: type || "contract_update",
+        data: job.data
+      });
+    }
   },
   {
     connection: redisClient as any,

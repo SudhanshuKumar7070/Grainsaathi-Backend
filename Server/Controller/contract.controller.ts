@@ -45,6 +45,45 @@ const rejectContractController = AsyncHandler(async (req: Request, res: Response
   return res.status(200).json(new ApiResponse(200, result, "Contract rejected successfully"));
 });
 
+const cancelContractController = AsyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+  const userRole = req.userRole!.toUpperCase() as SenderRole;
+
+  const result = await service.cancelContract(Number(id), userId, userRole);
+
+  res.status(200).json(new ApiResponse(200, result, "Contract cancelled successfully"));
+});
+
+const getSellContractDetailsController = AsyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+  const userRole = req.userRole as string;
+
+  const result = await service.getSellContract(Number(id), userId, userRole);
+
+  res.status(200).json(new ApiResponse(200, result, "Sell contract fetched successfully"));
+});
+
+const completeContractController = AsyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const userId = req.user!.id;
+
+  const result = await service.completeContract(Number(id), userId);
+
+  res.status(200).json(new ApiResponse(200, result, "Contract marked as completed"));
+});
+
+const getSellContractsController = AsyncHandler(async (req: Request, res: Response) => {
+  const { page } = req.query;
+  const userId = req.user!.id;
+
+  const pageNum = page ? Number(page) : 1;
+  const result = await service.getSellContracts(userId, pageNum);
+
+  res.status(200).json(new ApiResponse(200, result, "Sell contracts fetched successfully"));
+});
+
 const getIncomingContractsController = AsyncHandler(async (req: Request, res: Response) => {
   const receiverId = req.user!.id;
   const receiverRole = req.userRole!.toUpperCase() as ReceiverRole;
@@ -71,6 +110,10 @@ export {
   createContractController,
   acceptContractController,
   rejectContractController,
+  cancelContractController,
+  getSellContractDetailsController,
+  completeContractController,
+  getSellContractsController,
   getIncomingContractsController,
   getSentContractsController
 };

@@ -43,6 +43,16 @@ export class ContractRepository {
         }
       });
 
+      const gsContract = await tx.gsContract.findUnique({ where: { id: contractId } });
+      
+      if (gsContract && gsContract.senderRole !== "KISAAN") {
+        await tx.chatRoom.create({
+          data: {
+            sellContractId: newSellContract.id
+          }
+        });
+      }
+
       return { updatedGsContract, newSellContract };
     });
   }
@@ -69,6 +79,54 @@ export class ContractRepository {
       orderBy: { createdAt: "desc" },
       skip,
       take
+    });
+  }
+
+  async cancelGsContract(id: number) {
+    return prisma.gsContract.update({
+      where: { id },
+      data: { status: "CANCELLED" }
+    });
+  }
+
+  async expireContracts() {
+    return prisma.gsContract.updateMany({
+      where: { status: "PENDING", expiresAt: { lt: new Date() } },
+      data: { status: "EXPIRED" }
+    });
+  }
+
+  async getSellContractById(id: number) {
+    return prisma.sellContract.findUnique({
+      where: { id },
+      include: {
+        gsContract: true,
+        chatRooms: true
+      }
+    });
+  }
+
+  async completeSellContract(id: number) {
+    return prisma.sellContract.update({
+      where: { id },
+      data: { status: "COMPLETED", completedAt: new Date() }
+    });
+  }
+
+  async getSellContractsByUser(userId: number, skip: number, take: number) {
+    return prisma.sellContract.findMany({
+      where: {
+        OR: [
+          { sellerId: userId },
+          { buyerId: userId }
+        ]
+      },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+      include: {
+        gsContract: true
+      }
     });
   }
 }

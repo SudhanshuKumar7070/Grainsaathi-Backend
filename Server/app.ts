@@ -25,6 +25,8 @@ import superAdminRoute from "./Route/superadmin.route.js";
 import contractRoute from "./Route/contract.route.js";
 import sseRoute from "./Route/sse/test_send_events.js";
 
+import "./Architecture/cron/contractExpiry.cron.js";
+
 app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/trader", traderRoute);
 app.use("/api/v1/farmer", farmerRoute);

@@ -11,6 +11,31 @@ export const createContractSchema = z.object({
   }),
 });
 
+export const contractActionSchema = z.object({
+  params: z.object({
+    id: z.string().regex(/^\d+$/, "ID must be a number").transform(Number)
+  })
+});
+
+export const cancelContractSchema = z.object({
+  params: z.object({
+    id: z.string().regex(/^\d+$/, "ID must be a number").transform(Number)
+  })
+});
+
+export const sellContractParamSchema = z.object({
+  params: z.object({
+    id: z.string().regex(/^\d+$/, "ID must be a number").transform(Number)
+  })
+});
+
+export const getContractsQuerySchema = z.object({
+  query: z.object({
+    page: z.string().optional().transform(val => val ? Number(val) : 1),
+    limit: z.string().optional().transform(val => val ? Number(val) : 20)
+  })
+});
+
 export const acceptContractSchema = z.object({
   params: z.object({
     id: z.string().regex(/^\d+$/, "Contract ID must be a valid number"),
