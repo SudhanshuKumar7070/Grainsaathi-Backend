@@ -1,110 +1,119 @@
-# Grainsaathi - Backend
+# Grainsaathi — Backend (TypeScript)
 
-Grainsaathi is a backend server for a platform that helps farmers and buyers connect for agricultural grain trading. This repository holds the server code and API endpoints used by the Grainsaathi app.
+Grainsaathi is the backend service that powers a grain marketplace connecting farmers (kisaan), traders/buyers (vyapari), and organisations. This service handles authentication (OTP + JWT), user profiles, crop/product listings, contracts, notifications, and real-time events.
 
-## Key Points
+## Highlights (what it does, simply)
+- Phone-based OTP authentication and JWT-based authorization.
+- Separate flows for farmers, traders and organisations.
+- Add/list/update/remove crop listings (trader features).
+- Manage contracts and scheduled checks for expiry.
+- Background job processing for notifications and heavy tasks (BullMQ + Redis).
+- Real-time push using Server-Sent Events (SSE) for live updates.
 
-- Simple and lightweight backend built with JavaScript (Node.js).
-- Provides REST API endpoints for user management, product listings, orders, and messaging.
-- Focused on reliability, clear code, and easy setup so contributors can get started quickly.
+## Tech stack
+- Language: TypeScript (Node.js)
+- HTTP framework: Express (v5)
+- ORM: Prisma (@prisma/client)
+- Database: Postgres (Neon/Serverless adapters present)
+- Background jobs: BullMQ + Redis
+- SMS/OTP: Twilio
+- Validation: Zod
+- Dev tools: tsx, nodemon, TypeScript
 
-## Features
-
-- User registration and login
-- Farmer and buyer profiles
-- Create, update, and list grain products
-- Place and manage orders
-- Basic messaging between users
-- Admin tools for managing users and products
-
-## Tech Stack
-
-- Language: JavaScript
-- Runtime: Node.js
-- Frameworks/Libraries: (depends on project code — commonly Express or similar)
-- Database: (add your database here, e.g., MongoDB, PostgreSQL)
-
-> Note: Update the Tech Stack section above with the actual frameworks and database used in this project.
-
-## Quick Start (Development)
-
-1. Clone the repository:
-
+## Quick start (development)
+1. Clone repository and move to server folder:
    git clone https://github.com/SudhanshuKumar7070/Grainsaathi-Backend.git
-   cd Grainsaathi-Backend
+   cd Grainsaathi-Backend/Server
 
 2. Install dependencies:
-
    npm install
 
-3. Set environment variables:
+3. Environment
+   Create a `.env` file in Server/ with required variables. At minimum:
+   - PORT=8000
+   - DATABASE_URL=<postgres connection string>
+   - JWT_SECRET=<jwt secret>
+   - REDIS_URL=<redis connection string>          # for queues
+   - TWILIO_ACCOUNT_SID=...
+   - TWILIO_AUTH_TOKEN=...
+   - TWILIO_PHONE_NUMBER=...
+   Check Server/Config and other modules for any additional required variables.
 
-   Create a `.env` file in the project root and add the required variables. Common variables may include:
-
-   - PORT=3000
-   - DATABASE_URL=your-database-connection-string
-   - JWT_SECRET=your-secret-key
-
-   (Check the project code for exact environment variable names and add them here.)
-
-4. Run the project in development mode:
-
+4. Start in development
    npm run dev
+   Visit http://localhost:8000/test to verify the service is running.
 
-   or
+5. Build & run (production)
+   npm run build
+   npm start
 
-   node index.js
+6. Prisma
+   - Generate client: npx prisma generate
+   - Apply migrations (if any): npx prisma migrate deploy
+   - Alternatively, push schema: npx prisma db push
 
-   (Use the script or entry file the project provides — update these commands if different.)
+## Project structure (important folders)
+- Server/app.ts — Express app setup, middleware and routes
+- Server/index.ts — server bootstrap and worker/cron loader
+- Server/Route — route definitions (auth.routes.ts, trader.route.ts, farmers.route.ts, organisation.route.ts, superadmin.route.ts, contract.route.ts)
+- Server/Controller — controller functions for routes
+- Server/Service — business logic
+- Server/Repositories — DB access layer
+- Server/prisma — Prisma schema and migrations
+- Server/Architecture/worker — background worker; Architecture/cron — scheduled tasks
+- Server/SSE — server-sent events utilities
+- Server/Validators — Zod validation schemas
+- Server/Middleware — auth, rate limiting, error handling
 
-5. Open your API client (Postman or similar) and test endpoints at `http://localhost:<PORT>`.
+## Important endpoints (overview)
+- Auth:
+  - POST /api/v1/auth/send_login_otp
+  - POST /api/v1/auth/verify_login_otp
+  - POST /api/v1/auth/send_register_otp
+  - POST /api/v1/auth/verify_register_otp
+  - POST /api/v1/auth/register_kisaan, /login_kisaan
+  - POST /api/v1/auth/register_vyapari, /login_vyapari
+  - POST /api/v1/auth/register_company, /login_company
+  - POST /api/v1/auth/admin/login, /superadmin/login
+  - POST /api/v1/auth/refresh_token, /logout
+- Trader:
+  - POST /api/v1/trader/add_crop
+  - POST /api/v1/trader/remove_crop/:cropId
+  - GET /api/v1/trader/get_listed_crop
+  - POST /api/v1/trader/update_crop_price
+- Contracts, farmers, organisations and superadmin routes exist under their respective /api/v1/* paths.
+- SSE:
+  - /sse_event — subscribe for real-time updates
 
-## Environment & Configuration
+## Features explained (for non-developers)
+- OTP login/register: The system sends a one-time password (OTP) to a user's phone; after entering the OTP the user is logged in securely.
+- Roles: Farmers list crops they grow; traders buy or list crops for sale; organisations can manage groups or companies.
+- Contracts: Agreements between parties are stored and automatically checked for expiry. The server can notify users when contracts approach expiry.
+- Notifications: Time-consuming notifications and retryable tasks are handled in the background, so the API responses stay fast.
+- Live updates: Users using the web or mobile app can receive immediate updates (e.g., new messages or contract status) via SSE.
 
-- Ensure Node.js is installed (recommended version: 14.x or newer).
-- Add any required environment variables to `.env` as described above.
-- If the project uses a database, make sure the database is running and accessible.
-
-## Project Structure (example)
-
-- `src/` or `app/` - application source code
-- `routes/` - API route definitions
-- `controllers/` - request handlers and business logic
-- `models/` - database models or schemas
-- `config/` - configuration and environment setup
-- `tests/` - automated tests
-
-(Adjust these folders to match the actual repository layout.)
+## Development notes & tips
+- Validation: All incoming request bodies are validated with Zod schemas in Server/Validators. Follow those shapes when calling APIs.
+- Rate limiting: OTP endpoints are rate limited to avoid abuse — don’t call OTP endpoints repeatedly in short bursts during development.
+- Worker & Cron: index.ts imports Architecture/worker and Architecture/cron — ensure Redis is available if you run the worker and queues.
+- Logging & errors: The app has a global error handler that returns structured JSON { statusCode, message, success, data }.
 
 ## Contributing
+- Fork, make a feature branch, and open a pull request with a clear description.
+- Add tests for new features when possible.
+- Keep PRs small and focused.
 
-We welcome contributions. Please follow these simple steps:
+## Troubleshooting & FAQs
+- "Prisma client not found" — run `npx prisma generate`.
+- "Queue errors" — confirm REDIS_URL is set and Redis is reachable.
+- "Twilio errors" — verify Twilio credentials and that they are set in env.
 
-1. Fork the repository.
-2. Create a branch for your change: `git checkout -b feature/my-feature`.
-3. Make your changes, add tests if possible.
-4. Commit and push your branch: `git push origin feature/my-feature`.
-5. Open a pull request describing your changes.
-
-Please keep changes focused and include clear commit messages.
-
-## Issues and Support
-
-If you find bugs or want to request a feature, open an issue on GitHub with a clear title and description. Include steps to reproduce any bug and relevant logs or screenshots.
-
-## License
-
-Add the project license here (for example, MIT). If you are unsure, add a LICENSE file with the chosen license.
-
-## Contact
-
-Maintainer: Sudhanshu Kumar
-GitHub: https://github.com/SudhanshuKumar7070
-
+## License & contact
+- License: Add a LICENSE file with your chosen license (e.g., MIT).
+- Maintainer: Sudhanshu Kumar — https://github.com/SudhanshuKumar7070
 
 ---
-
-Thanks for working on Grainsaathi! If you'd like, I can:
-
-- Update the README with exact commands, dependencies, and environment variable names after inspecting the code.
-- Add API examples (endpoints and sample requests) by scanning the repo.
+If you want, I can:
+- Generate a .env.example with the environment variables pulled from the code.
+- Add concrete curl examples for common flows (OTP -> verify -> get token -> call protected endpoint).
+- Create a short CONTRIBUTING.md and a checklist for running worker + Redis + DB locally.
