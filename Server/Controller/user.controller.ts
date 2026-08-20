@@ -1,176 +1,62 @@
 import { Request, Response } from "express";
-import client from "../Config/twilio.config.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { AsyncHandler } from "../utils/AsynHandler.js";
-import { generateOTP } from "../utils/otpGenarator.js";
-import redisClient from "../Config/redis.config.js";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
+import { AuthService } from "../Service/auth.service.js";
 import prisma from "../lib/prisma.js";
 import sseObj from "../SSE/sse_store.js";
 import notificationQueue from "../Architecture/queue/notification.queue.js";
-
-const twilio_service_id = process.env.TWILIO_SERVICE_SID;
-
-const sendOtpMessage = async (to: string, body: string) => {
-  try {
-    const response = await client.messages.create({
-      from: process.env.FROM_PHONE_NUMBER,
-      body: body,
-      to: to,
-    });
-    return response;
-  } catch (err) {
-    return false;
-  }
-};
-
-const sendOtp = async (phoneNumber: string) => {
-  const otp = generateOTP();
-  const hashedOtp = await bcrypt.hash(otp.toString(), 10);
-
-  await redisClient.hset(
-    `phoneNumber:${phoneNumber}`,
-    "hash",
-    hashedOtp,
-    "attempts",
-    0
-  );
-
-  await redisClient.expire(`phoneNumber:${phoneNumber}`, 300);
-
-  const sampleBody = `Your OTP is ${otp}. Valid for 5 minutes.`;
-  const is_otp_sent = await sendOtpMessage(phoneNumber, sampleBody);
-  if (!is_otp_sent) throw new ApiError(500, "failed to send otp");
-
-  return { message: "success" };
-};
+import jwt from "jsonwebtoken";
+import { generateGsLoginId } from "../utils/gsLoginGenerator.js";
 
 const send_register_otp = AsyncHandler(async (req: Request, res: Response) => {
   const phoneNumber = req.body.phoneNumber;
   if (!phoneNumber) throw new ApiError(400, "missing phone number");
 
-  const user = await prisma.kisaan.findUnique({
-    where: { phone: phoneNumber },
-  });
-
+  const user = await prisma.kisaan.findUnique({ where: { phone: phoneNumber } });
   if (user) throw new ApiError(409, "user already exists");
 
-  const is_otp_sent = await sendOtp(phoneNumber);
-  if (!is_otp_sent)
-    throw new ApiError(500, "something went wrong in sending otp");
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, null, "otp sent successfully"));
+  await AuthService.sendOtp(phoneNumber, "REGISTER");
+  return res.status(200).json(new ApiResponse(200, null, "otp sent successfully"));
 });
 
 const verifyRegisterOtp = AsyncHandler(async (req: Request, res: Response) => {
-  const private_key = process.env.JWT_PRIVATE_KEY!;
-
   const { phoneNumber, otp } = req.body;
-  if (!phoneNumber || !otp)
-    throw new ApiError(400, "missing phone number or otp at verify otp api");
+  if (!phoneNumber || !otp) throw new ApiError(400, "missing phone number or otp");
 
-  const result = await redisClient.hgetall(`phoneNumber:${phoneNumber}`);
-  if (!result.hash) throw new ApiError(400, "otp expired");
-
-  const otpAttempts = result.attempts;
-  if (Number(otpAttempts) >= 5) throw new ApiError(429, "OTP blocked");
-
-  const isOtpMatched = await bcrypt.compare(otp, result.hash);
-  if (!isOtpMatched) {
-    await redisClient.hincrby(`phoneNumber:${phoneNumber}`, "attempts", 1);
-    throw new ApiError(400, "invalid otp");
-  }
-
-  await redisClient.del(`phoneNumber:${phoneNumber}`);
-
-  const token = jwt.sign({ phoneNumber, purpose: "REGISTER" }, private_key, {
-    expiresIn: "5m",
-  });
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(200, token, "otp for registration verified successfully")
-    );
+  const token = await AuthService.verifyOtp(phoneNumber, otp, "REGISTER");
+  return res.status(200).json(new ApiResponse(200, token, "otp for registration verified successfully"));
 });
 
 const send_login_otp = AsyncHandler(async (req: Request, res: Response) => {
   const phoneNumber = req.body.phoneNumber;
   if (!phoneNumber) throw new ApiError(400, "missing phone number");
 
-  const user = await prisma.kisaan.findUnique({
-    where: { phone: phoneNumber },
-  });
+  const user = await prisma.kisaan.findUnique({ where: { phone: phoneNumber } });
+  if (!user) throw new ApiError(404, "user not registered ,need to register first");
 
-  if (!user)
-    throw new ApiError(404, "user not registered ,need to register first");
-
-  const is_otp_sent = await sendOtp(phoneNumber);
-  if (!is_otp_sent)
-    throw new ApiError(500, "something went wrong in sending otp");
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, null, "otp sent successfully"));
+  await AuthService.sendOtp(phoneNumber, "LOGIN");
+  return res.status(200).json(new ApiResponse(200, null, "otp sent successfully"));
 });
 
 const verifyLoginOtp = AsyncHandler(async (req: Request, res: Response) => {
-  const private_key = process.env.JWT_PRIVATE_KEY!;
-
   const { phoneNumber, otp } = req.body;
-  if (!phoneNumber || !otp)
-    throw new ApiError(400, "missing phone number or otp at verify otp api");
+  if (!phoneNumber || !otp) throw new ApiError(400, "missing phone number or otp");
 
-  const result = await redisClient.hgetall(`phoneNumber:${phoneNumber}`);
-  if (!result.hash) throw new ApiError(400, "otp expired");
-
-  const otpAttempts = result.attempts;
-  if (Number(otpAttempts) >= 5) throw new ApiError(429, "OTP blocked");
-
-  const isOtpMatched = await bcrypt.compare(otp, result.hash);
-  if (!isOtpMatched) {
-    await redisClient.hincrby(`phoneNumber:${phoneNumber}`, "attempts", 1);
-    throw new ApiError(400, "invalid otp");
-  }
-
-  await redisClient.del(`phoneNumber:${phoneNumber}`);
-
-  const token = jwt.sign({ phoneNumber, purpose: "LOGIN" }, private_key, {
-    expiresIn: "5m",
-  });
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, token, "otp for login verified successfully"));
+  const token = await AuthService.verifyOtp(phoneNumber, otp, "LOGIN");
+  return res.status(200).json(new ApiResponse(200, token, "otp for login verified successfully"));
 });
 
 const registerKisaan = AsyncHandler(async (req: Request, res: Response) => {
   const { name, email, password, userAddress } = req.body;
 
   if ([name, email, password, userAddress].some((el) => !el || !el.trim())) {
-    throw new ApiError(400, "all fields are required in register kisan api");
+    throw new ApiError(400, "all fields are required");
   }
 
-  if (!req.headers.authorization) {
-    throw new ApiError(
-      401,
-      "authorization header is missing from request header in register kisan api"
-    );
-  }
-
+  if (!req.headers.authorization) throw new ApiError(401, "authorization header missing");
   const tokenParts = req.headers.authorization.split(" ");
   const token = tokenParts.length > 1 ? tokenParts[1] : tokenParts[0];
-
-  if (!token) {
-    throw new ApiError(
-      401,
-      "token is missing from request header in register kisan api"
-    );
-  }
 
   let decodedToken: any;
   try {
@@ -179,392 +65,280 @@ const registerKisaan = AsyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(401, "Invalid or expired token");
   }
 
-  if (decodedToken.purpose !== "REGISTER") {
-    throw new ApiError(400, "invalid purpose in token in register kisan api");
-  }
+  if (decodedToken.purpose !== "REGISTER") throw new ApiError(400, "invalid purpose in token");
 
   const { phoneNumber } = decodedToken;
+  const isExistingUser = await prisma.kisaan.findUnique({ where: { phone: phoneNumber } });
+  if (isExistingUser) throw new ApiError(409, "user already exists");
 
-  const isExistingUser = await prisma.kisaan.findUnique({
-    where: { phone: phoneNumber },
-  });
-
-  if (isExistingUser) {
-    throw new ApiError(409, "user already exists");
-  }
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-
+  const hashedPassword = await AuthService.hashPassword(password);
   const kisanUser = await prisma.kisaan.create({
-    data: {
-      name: name,
-      email,
-      password: hashedPassword,
-      phone: phoneNumber,
-      address: userAddress,
-    },
+    data: { name, email, password: hashedPassword, phone: phoneNumber, address: userAddress },
   });
-
-  if (!kisanUser) {
-    throw new ApiError(
-      500,
-      "something went wrong in register kisan api , kisan user not created"
-    );
-  }
 
   const { password: _, refreshToken: __, ...safeKisaanUser } = kisanUser;
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, safeKisaanUser, "kisan registered successfully"));
+  return res.status(200).json(new ApiResponse(200, safeKisaanUser, "kisan registered successfully"));
 });
 
 const loginKisaan = AsyncHandler(async (req: Request, res: Response) => {
-  if (!req.headers.authorization)
-    throw new ApiError(401, "authorisation is missing from header");
-
+  if (!req.headers.authorization) throw new ApiError(401, "authorisation is missing from header");
   const tokenParts = req.headers.authorization.split(" ");
-  const verified_otp_token =
-    tokenParts.length > 1 ? tokenParts[1] : tokenParts[0];
-  if (!verified_otp_token)
-    throw new ApiError(401, "otp authorisation token is not available");
+  const verified_otp_token = tokenParts.length > 1 ? tokenParts[1] : tokenParts[0];
 
-  const decoded: any = jwt.verify(
-    verified_otp_token,
-    process.env.JWT_PRIVATE_KEY!
-  );
-
-  if (!decoded) throw new ApiError(401, "invalid user");
-
-  if (decoded.purpose !== "LOGIN")
-    throw new ApiError(403, "Invalid OTP token purpose");
+  const decoded: any = jwt.verify(verified_otp_token, process.env.JWT_PRIVATE_KEY!);
+  if (decoded.purpose !== "LOGIN") throw new ApiError(403, "Invalid OTP token purpose");
 
   const phoneNumber = decoded.phoneNumber;
-
-  const user = await prisma.kisaan.findUnique({
-    where: { phone: phoneNumber },
-  });
-
+  const user = await prisma.kisaan.findUnique({ where: { phone: phoneNumber } });
   if (!user) throw new ApiError(404, "user not exist with phone number");
 
-  const user_id = user.id;
+  const { accessToken, refreshToken } = AuthService.generateTokenPair(user.id, "kisaan");
 
-  const refreshToken = jwt.sign(
-    { user_id, role: "kisaan" },
-    process.env.JWT_TOKEN_PRIVATE_KEY!,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY } as jwt.SignOptions
-  );
+  await prisma.kisaan.update({ where: { phone: phoneNumber }, data: { refreshToken } });
 
-  const accessToken = jwt.sign(
-    { user_id, role: "kisaan" },
-    process.env.JWT_TOKEN_PRIVATE_KEY!,
-    {
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
-    } as jwt.SignOptions
-  );
-
-  await prisma.kisaan.update({
-    where: { phone: phoneNumber },
-    data: { refreshToken },
-  });
-
-  const options = {
-    httpOnly: true,
-    secure: true,
-  };
-
-  sseObj.broadCastToServer("user_login", {
-    message: `user ${user.name} login successfull`,
-  });
+  sseObj.broadCastToServer("user_login", { message: `user ${user.name} login successfull` });
 
   const { password: _, refreshToken: __, ...safeUser } = user;
-
-  return res
-    .status(200)
-    .cookie("refreshToken", refreshToken, options)
-    .cookie("accessToken", accessToken, options)
-    .json(new ApiResponse(200, safeUser, "user login successfull"));
+  const options = { httpOnly: true, secure: true };
+  return res.status(200).cookie("refreshToken", refreshToken, options).cookie("accessToken", accessToken, options).json(new ApiResponse(200, safeUser, "user login successfull"));
 });
 
 const registerVyapari = AsyncHandler(async (req: Request, res: Response) => {
   const { name, email, address, password, gstNumber } = req.body;
-  if ([name, email, address, password].some((el) => !el || !el.trim()))
-    throw new ApiError(400, "all fields are required");
-  if (!req.headers.authorization)
-    throw new ApiError(401, "authorisation is missings from header");
+  if ([name, email, address, password].some((el) => !el || !el.trim())) throw new ApiError(400, "all fields are required");
+  
+  if (!req.headers.authorization) throw new ApiError(401, "authorisation is missing");
   const tokenParts = req.headers.authorization.split(" ");
   const authToken = tokenParts.length > 1 ? tokenParts[1] : tokenParts[0];
-  if (!authToken)
-    throw new ApiError(401, "auth token is not available in headers");
-  const decodedToken: any = jwt.verify(
-    authToken,
-    process.env.JWT_PRIVATE_KEY!
-  );
-  if (!decodedToken) throw new ApiError(401, "token not verified");
-  const purpose = decodedToken.purpose;
-  if (purpose !== "REGISTER") throw new ApiError(400, "invalid token purpose");
+  
+  const decodedToken: any = jwt.verify(authToken, process.env.JWT_PRIVATE_KEY!);
+  if (decodedToken.purpose !== "REGISTER") throw new ApiError(400, "invalid token purpose");
+  
   const phoneNumber = decodedToken.phoneNumber;
-  const isExistingUser = await prisma.vyapari.findUnique({
-    where: { phone: phoneNumber },
-  });
+  const isExistingUser = await prisma.vyapari.findUnique({ where: { phone: phoneNumber } });
   if (isExistingUser) throw new ApiError(409, "user already exists");
-  const hashedPassword = await bcrypt.hash(password, 10);
+  
+  const hashedPassword = await AuthService.hashPassword(password);
   const userLocation: any = req.query;
   const lat = userLocation?.lat ? Number(userLocation.lat) : null;
   const long = userLocation?.long ? Number(userLocation.long) : null;
+  
   const { user, ticket } = await prisma.$transaction(async (tx) => {
     const newUser = await tx.vyapari.create({
-      data: {
-        name: name,
-        email: email,
-        password: hashedPassword,
-        phone: phoneNumber,
-        address: address,
-        lat: lat,
-        long: long,
-        gstNumber: gstNumber ? gstNumber : null,
-        registrationStatus: "PENDING",
-      },
+      data: { name, email, password: hashedPassword, phone: phoneNumber, address, lat, long, gstNumber: gstNumber || null, registrationStatus: "PENDING" },
     });
-
-    const newTicket = await tx.registrationTaskTicket.create({
-      data: {
-        vyapariId: newUser.id,
-        status: "PENDING",
-      },
-    });
-
+    const newTicket = await tx.registrationTaskTicket.create({ data: { vyapariId: newUser.id, status: "PENDING" } });
     return { user: newUser, ticket: newTicket };
   });
 
-  if (!user) {
-    throw new ApiError(500, "error in creating vyapari user");
-  }
-
   try {
-    await notificationQueue.add("new_registration", {
-      ticketId: ticket.id,
-      traderId: user.id,
-      traderName: user.name,
-    });
+    await notificationQueue.add("new_registration", { ticketId: ticket.id, traderId: user.id, traderName: user.name });
   } catch (error) {
     console.error("Failed to enqueue notification task:", error);
   }
 
   const { password: _, refreshToken: __, ...safeUser } = user;
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        safeUser,
-        "vyapari registration request made successfully"
-      )
-    );
+  return res.status(200).json(new ApiResponse(200, safeUser, "vyapari registration request made successfully"));
 });
 
 const loginVyapari = AsyncHandler(async (req: Request, res: Response) => {
-  if (!req.headers.authorization)
-    throw new ApiError(401, "authorisation is missing from header");
+  const { gsLoginId, password } = req.body;
+  if (!gsLoginId || !password) throw new ApiError(400, "gsLoginId and password are required");
 
-  const tokenParts = req.headers.authorization.split(" ");
-  const verified_otp_token =
-    tokenParts.length > 1 ? tokenParts[1] : tokenParts[0];
-  if (!verified_otp_token)
-    throw new ApiError(401, "otp authorisation token is not available");
+  const user = await prisma.vyapari.findUnique({ where: { gsLoginId } });
+  if (!user) throw new ApiError(404, "Invalid gsLoginId");
 
-  const decoded: any = jwt.verify(
-    verified_otp_token,
-    process.env.JWT_PRIVATE_KEY!
-  );
+  if (user.registrationStatus !== "ACCEPTED") throw new ApiError(403, "Account pending admin approval");
 
-  if (!decoded) throw new ApiError(401, "invalid user");
+  const isMatched = await AuthService.comparePassword(password, user.password || "");
+  if (!isMatched) throw new ApiError(401, "Invalid password");
 
-  if (decoded.purpose !== "LOGIN")
-    throw new ApiError(403, "Invalid OTP token purpose");
-
-  const phoneNumber = decoded.phoneNumber;
-
-  const user = await prisma.vyapari.findUnique({
-    where: { phone: phoneNumber },
-  });
-
-  if (!user) throw new ApiError(404, "user not exist with phone number");
-
-  const user_id = user.id;
-
-  const refreshToken = jwt.sign(
-    { user_id, role: "vyapari" },
-    process.env.JWT_TOKEN_PRIVATE_KEY!,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY } as jwt.SignOptions
-  );
-
-  const accessToken = jwt.sign(
-    { user_id, role: "vyapari" },
-    process.env.JWT_TOKEN_PRIVATE_KEY!,
-    {
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
-    } as jwt.SignOptions
-  );
-
-  await prisma.vyapari.update({
-    where: { phone: phoneNumber },
-    data: { refreshToken },
-  });
-
-  const options = {
-    httpOnly: true,
-    secure: true,
-  };
+  const { accessToken, refreshToken } = AuthService.generateTokenPair(user.id, "vyapari");
+  await prisma.vyapari.update({ where: { id: user.id }, data: { refreshToken } });
 
   const { password: _, refreshToken: __, ...safeUser } = user;
-
-  return res
-    .status(200)
-    .cookie("refreshToken", refreshToken, options)
-    .cookie("accessToken", accessToken, options)
-    .json(new ApiResponse(200, safeUser, "user login successfull"));
+  const options = { httpOnly: true, secure: true };
+  return res.status(200).cookie("refreshToken", refreshToken, options).cookie("accessToken", accessToken, options).json(new ApiResponse(200, safeUser, "vyapari login successfull"));
 });
 
 const registerCompany = AsyncHandler(async (req: Request, res: Response) => {
   const { name, email, password, address, gstNumber } = req.body;
-  if ([name, email, password, address].some((el) => !el || !el.trim()))
-    throw new ApiError(400, "all required fields must be filled");
+  if ([name, email, password, address].some((el) => !el || !el.trim())) throw new ApiError(400, "all required fields must be filled");
 
-  if (!req.headers.authorization)
-    throw new ApiError(401, "authorisation header is not available");
-
+  if (!req.headers.authorization) throw new ApiError(401, "authorisation header is not available");
   const tokenParts = req.headers.authorization.split(" ");
   const authToken = tokenParts.length > 1 ? tokenParts[1] : tokenParts[0];
 
-  const decodedToken: any = jwt.verify(
-    authToken,
-    process.env.JWT_PRIVATE_KEY!
-  );
-  if (!decodedToken) throw new ApiError(401, "invalid jwt token");
-  if (decodedToken.purpose !== "REGISTER")
-    throw new ApiError(400, "invalid token purpose");
+  const decodedToken: any = jwt.verify(authToken, process.env.JWT_PRIVATE_KEY!);
+  if (decodedToken.purpose !== "REGISTER") throw new ApiError(400, "invalid token purpose");
 
   const phoneNumber = decodedToken.phoneNumber;
+  const isUserExists = await prisma.organisation.findUnique({ where: { phone: phoneNumber } });
+  if (isUserExists) throw new ApiError(409, "user already exists");
+
+  const hashedPassword = await AuthService.hashPassword(password);
   const userLocation: any = req.query;
   const lat = userLocation?.lat ? Number(userLocation.lat) : null;
   const long = userLocation?.long ? Number(userLocation.long) : null;
 
-  const isUserExists = await prisma.organisation.findUnique({
-    where: {
-      phone: phoneNumber,
-    },
-  });
-
-  if (isUserExists) throw new ApiError(409, "user already exists");
-
-  const hashedPassword = await bcrypt.hash(password, 10);
   const { user, ticket } = await prisma.$transaction(async (tx) => {
     const newUser = await tx.organisation.create({
-      data: {
-        name: name,
-        phone: phoneNumber,
-        email: email,
-        password: hashedPassword,
-        address: address,
-        lat: lat,
-        long: long,
-        gstNumber: gstNumber || null,
-        registrationStatus: "PENDING",
-      },
+      data: { name, phone: phoneNumber, email, password: hashedPassword, address, lat, long, gstNumber: gstNumber || null, registrationStatus: "PENDING" },
     });
-
-    const newTicket = await tx.registrationTaskTicket.create({
-      data: {
-        orgId: newUser.id,
-        status: "PENDING",
-      },
-    });
-
+    const newTicket = await tx.registrationTaskTicket.create({ data: { orgId: newUser.id, status: "PENDING" } });
     return { user: newUser, ticket: newTicket };
   });
 
-  if (!user) throw new ApiError(500, "error in creating user");
-
   try {
-    await notificationQueue.add("new_registration", {
-      ticketId: ticket.id,
-      orgId: user.id,
-      orgName: user.name,
-    });
+    await notificationQueue.add("new_registration", { ticketId: ticket.id, orgId: user.id, orgName: user.name });
   } catch (error) {
     console.error("Failed to enqueue notification task:", error);
   }
 
   const { password: _, refreshToken: __, ...safeUser } = user;
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, safeUser, "user created succesfully"));
+  return res.status(200).json(new ApiResponse(200, safeUser, "company created succesfully"));
 });
 
 const companyLogin = AsyncHandler(async (req: Request, res: Response) => {
-  const password = req.body.password;
-  if (!password) throw new ApiError(400, "password required");
-  if (!req.headers.authorization)
-    throw new ApiError(401, "authorisation token not exists in header");
+  const { gsLoginId, password } = req.body;
+  if (!gsLoginId || !password) throw new ApiError(400, "gsLoginId and password are required");
 
-  const tokenParts = req.headers.authorization.split(" ");
-  const authToken = tokenParts.length > 1 ? tokenParts[1] : tokenParts[0];
+  const user = await prisma.organisation.findUnique({ where: { gsLoginId } });
+  if (!user) throw new ApiError(404, "Invalid gsLoginId");
 
-  const decodedToken: any = jwt.verify(
-    authToken,
-    process.env.JWT_PRIVATE_KEY!
-  );
-  if (decodedToken.purpose !== "LOGIN")
-    throw new ApiError(400, "invalid token purpose");
+  if (user.registrationStatus !== "ACCEPTED") throw new ApiError(403, "Account pending admin approval");
 
-  const phoneNumber = decodedToken.phoneNumber;
-  const isUserExists = await prisma.organisation.findUnique({
-    where: {
-      phone: phoneNumber,
-    },
-  });
-  if (!isUserExists)
-    throw new ApiError(404, "user not exists you need to register first");
-  const is_password_matched = await bcrypt.compare(
-    password,
-    isUserExists?.password
-  );
-  if (!is_password_matched) throw new ApiError(401, "invalid password");
-  const user_id = isUserExists.id;
-  const refreshToken = jwt.sign(
-    { user_id, role: "organisation" },
-    process.env.JWT_TOKEN_PRIVATE_KEY!,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY } as jwt.SignOptions
-  );
+  const isMatched = await AuthService.comparePassword(password, user.password || "");
+  if (!isMatched) throw new ApiError(401, "Invalid password");
 
-  const accessToken = jwt.sign(
-    { user_id, role: "organisation" },
-    process.env.JWT_TOKEN_PRIVATE_KEY!,
-    {
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
-    } as jwt.SignOptions
-  );
+  const { accessToken, refreshToken } = AuthService.generateTokenPair(user.id, "organisation");
+  await prisma.organisation.update({ where: { id: user.id }, data: { refreshToken } });
 
-  await prisma.organisation.update({
-    where: { phone: phoneNumber },
-    data: { refreshToken },
+  const { password: _, refreshToken: __, ...safeUser } = user;
+  const options = { httpOnly: true, secure: true };
+  return res.status(200).cookie("refreshToken", refreshToken, options).cookie("accessToken", accessToken, options).json(new ApiResponse(200, safeUser, "organisation login successfull"));
+});
+
+const registerAdmin = AsyncHandler(async (req: Request, res: Response) => {
+  const { name, email, password, phone } = req.body;
+  if (!name || !email || !password || !phone) throw new ApiError(400, "all fields are required");
+
+  const existing = await prisma.admin.findFirst({ where: { OR: [{ email }, { phone }] } });
+  if (existing) throw new ApiError(409, "Admin already exists");
+
+  const hashedPassword = await AuthService.hashPassword(password);
+  
+  const user = await prisma.admin.create({
+    data: { name, email, phone, password: hashedPassword }
   });
 
-  const options = {
-    httpOnly: true,
-    secure: true,
-  };
+  const gsLoginId = generateGsLoginId("admin", user.id);
+  const updatedUser = await prisma.admin.update({
+    where: { id: user.id },
+    data: { gsLoginId }
+  });
 
-  const { password: _, refreshToken: __, ...safeUser } = isUserExists;
+  const { password: _, refreshToken: __, ...safeUser } = updatedUser;
+  return res.status(200).json(new ApiResponse(200, safeUser, "Admin created successfully"));
+});
 
-  return res
-    .status(200)
-    .cookie("refreshToken", refreshToken, options)
-    .cookie("accessToken", accessToken, options)
-    .json(new ApiResponse(200, safeUser, "user login successfull"));
+const loginAdmin = AsyncHandler(async (req: Request, res: Response) => {
+  const { gsLoginId, password } = req.body;
+  if (!gsLoginId || !password) throw new ApiError(400, "gsLoginId and password are required");
+
+  const user = await prisma.admin.findUnique({ where: { gsLoginId } });
+  if (!user) throw new ApiError(404, "Invalid gsLoginId");
+  if (!user.isActive) throw new ApiError(403, "Admin account is deactivated");
+
+  const isMatched = await AuthService.comparePassword(password, user.password || "");
+  if (!isMatched) throw new ApiError(401, "Invalid password");
+
+  const { accessToken, refreshToken } = AuthService.generateTokenPair(user.id, "admin");
+  await prisma.admin.update({ where: { id: user.id }, data: { refreshToken } });
+
+  const { password: _, refreshToken: __, ...safeUser } = user;
+  const options = { httpOnly: true, secure: true };
+  return res.status(200).cookie("refreshToken", refreshToken, options).cookie("accessToken", accessToken, options).json(new ApiResponse(200, safeUser, "Admin login successfull"));
+});
+
+const registerSuperAdmin = AsyncHandler(async (req: Request, res: Response) => {
+  const { name, email, password, phone } = req.body;
+  if (!name || !email || !password || !phone) throw new ApiError(400, "all fields are required");
+
+  const existing = await prisma.superAdmin.findFirst();
+  if (existing) throw new ApiError(403, "SuperAdmin already exists");
+
+  const hashedPassword = await AuthService.hashPassword(password);
+  
+  const user = await prisma.superAdmin.create({
+    data: { name, email, phone, password: hashedPassword }
+  });
+
+  const { password: _, refreshToken: __, ...safeUser } = user;
+  return res.status(200).json(new ApiResponse(200, safeUser, "SuperAdmin created successfully"));
+});
+
+const loginSuperAdmin = AsyncHandler(async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+  if (!email || !password) throw new ApiError(400, "email and password are required");
+
+  const user = await prisma.superAdmin.findUnique({ where: { email } });
+  if (!user) throw new ApiError(404, "Invalid credentials");
+
+  const isMatched = await AuthService.comparePassword(password, user.password || "");
+  if (!isMatched) throw new ApiError(401, "Invalid password");
+
+  const { accessToken, refreshToken } = AuthService.generateTokenPair(user.id, "superadmin");
+  await prisma.superAdmin.update({ where: { id: user.id }, data: { refreshToken } });
+
+  const { password: _, refreshToken: __, ...safeUser } = user;
+  const options = { httpOnly: true, secure: true };
+  return res.status(200).cookie("refreshToken", refreshToken, options).cookie("accessToken", accessToken, options).json(new ApiResponse(200, safeUser, "SuperAdmin login successfull"));
+});
+
+const refreshAccessToken = AsyncHandler(async (req: Request, res: Response) => {
+  const incomingRefreshToken = req.cookies.refreshToken;
+  if (!incomingRefreshToken) throw new ApiError(401, "unauthorized request");
+
+  const decodedToken: any = jwt.verify(incomingRefreshToken, process.env.JWT_TOKEN_PRIVATE_KEY!);
+  
+  let user: any = null;
+  const role = decodedToken.role;
+  const id = decodedToken.user_id;
+
+  if (role === "kisaan") user = await prisma.kisaan.findUnique({ where: { id } });
+  else if (role === "vyapari") user = await prisma.vyapari.findUnique({ where: { id } });
+  else if (role === "organisation") user = await prisma.organisation.findUnique({ where: { id } });
+  else if (role === "admin") user = await prisma.admin.findUnique({ where: { id } });
+  else if (role === "superadmin") user = await prisma.superAdmin.findUnique({ where: { id } });
+
+  if (!user) throw new ApiError(401, "Invalid refresh token");
+  if (incomingRefreshToken !== user.refreshToken) throw new ApiError(401, "Refresh token is expired or used");
+
+  const { accessToken, refreshToken } = AuthService.generateTokenPair(user.id, role);
+
+  if (role === "kisaan") await prisma.kisaan.update({ where: { id }, data: { refreshToken } });
+  else if (role === "vyapari") await prisma.vyapari.update({ where: { id }, data: { refreshToken } });
+  else if (role === "organisation") await prisma.organisation.update({ where: { id }, data: { refreshToken } });
+  else if (role === "admin") await prisma.admin.update({ where: { id }, data: { refreshToken } });
+  else if (role === "superadmin") await prisma.superAdmin.update({ where: { id }, data: { refreshToken } });
+
+  const options = { httpOnly: true, secure: true };
+  return res.status(200).cookie("accessToken", accessToken, options).cookie("refreshToken", refreshToken, options).json(new ApiResponse(200, { accessToken, refreshToken }, "Access token refreshed"));
+});
+
+const logoutUser = AsyncHandler(async (req: Request, res: Response) => {
+  const role = req.userRole;
+  const id = req.user!.id;
+
+  if (role === "kisaan") await prisma.kisaan.update({ where: { id }, data: { refreshToken: null } });
+  else if (role === "vyapari") await prisma.vyapari.update({ where: { id }, data: { refreshToken: null } });
+  else if (role === "organisation") await prisma.organisation.update({ where: { id }, data: { refreshToken: null } });
+  else if (role === "admin") await prisma.admin.update({ where: { id }, data: { refreshToken: null } });
+  else if (role === "superadmin") await prisma.superAdmin.update({ where: { id }, data: { refreshToken: null } });
+
+  const options = { httpOnly: true, secure: true };
+  return res.status(200).clearCookie("accessToken", options).clearCookie("refreshToken", options).json(new ApiResponse(200, {}, "User logged out"));
 });
 
 export {
@@ -578,4 +352,10 @@ export {
   loginVyapari,
   registerCompany,
   companyLogin,
+  registerAdmin,
+  loginAdmin,
+  registerSuperAdmin,
+  loginSuperAdmin,
+  refreshAccessToken,
+  logoutUser
 };

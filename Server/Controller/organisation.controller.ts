@@ -5,12 +5,12 @@ import ApiResponse from "../utils/ApiResponse.js";
 import prisma from "../lib/prisma.js";
 import sseObj from "../SSE/sse_store.js";
 
-const add_crop = AsyncHandler(async (req: Request, res: Response) => {
-  const trader_id = req.user!.id;
+const addOrgCrop = AsyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.user!.id;
   const { cropName, priceInPaise, quantityQuintal } = req.body;
 
   const existing = await prisma.crops.findFirst({
-    where: { traderId: trader_id, cropName, deletedAt: null },
+    where: { organisationId: orgId, cropName, deletedAt: null },
   });
 
   if (existing) {
@@ -20,7 +20,7 @@ const add_crop = AsyncHandler(async (req: Request, res: Response) => {
   const newCrop = await prisma.crops.create({
     data: {
       cropName,
-      traderId: trader_id,
+      organisationId: orgId,
       priceInPaise,
       quantityQuintal: quantityQuintal || null
     },
@@ -29,54 +29,50 @@ const add_crop = AsyncHandler(async (req: Request, res: Response) => {
   return res.status(201).json(new ApiResponse(201, newCrop, "Crop added successfully"));
 });
 
-const removeCrop = AsyncHandler(async (req: Request, res: Response) => {
-  if (!req.user || !req.user.id) throw new ApiError(401, "unauhtoried");
-  const traderId = req.user.id;
-  const cropId = req.params.cropId;
-  if (!cropId) throw new ApiError(400, "crop id is not available");
-  const parsedId = Number(cropId);
-  if (isNaN(parsedId)) throw new ApiError(400, "invalid crop id");
+const removeOrgCrop = AsyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.user!.id;
+  const cropId = Number(req.params.cropId);
+  
+  if (isNaN(cropId)) throw new ApiError(400, "invalid crop id");
+
   const existing = await prisma.crops.findFirst({
-    where: { id: parsedId, traderId: traderId },
+    where: { id: cropId, organisationId: orgId },
   });
-  if (!existing) throw new ApiError(404, "crop doesnot exists");
+  
+  if (!existing) throw new ApiError(404, "crop does not exist");
+  
   const updated = await prisma.crops.update({
-    where: { id: parsedId },
+    where: { id: cropId },
     data: { deletedAt: new Date() },
   });
-  if (!updated) throw new ApiError(500, "unable to delete crop at moment");
-  return res
-    .status(200)
-    .json(new ApiResponse(200, updated, "crop deleion success"));
+  
+  return res.status(200).json(new ApiResponse(200, updated, "crop deletion success"));
 });
 
-const getListedCrop = AsyncHandler(async (req: Request, res: Response) => {
+const getListedOrgCrop = AsyncHandler(async (req: Request, res: Response) => {
   const page = Number(req.query.page) || 1;
   const limit = 20;
-  if (!req.user || !req.user?.id)
-    throw new ApiError(401, "unauthorised access");
-  const userId = req.user.id;
+  const orgId = req.user!.id;
+  
   const crops = await prisma.crops.findMany({
     where: {
-      traderId: userId,
+      organisationId: orgId,
       deletedAt: null,
     },
     skip: (page - 1) * limit,
     take: limit,
   });
-  if (!crops) throw new ApiError(500, "unable to fetch crops at the moment");
-  return res
-    .status(200)
-    .json(new ApiResponse(200, crops, "crops fetched success fully"));
+  
+  return res.status(200).json(new ApiResponse(200, crops, "crops fetched successfully"));
 });
 
-const updateCropPrice = AsyncHandler(async (req: Request, res: Response) => {
-  const trader_id = req.user!.id;
+const updateOrgCropPrice = AsyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.user!.id;
   const cropId = Number(req.params.cropId);
   const { newPriceInPaise } = req.body;
 
   const existingCrop = await prisma.crops.findFirst({
-    where: { id: cropId, traderId: trader_id, deletedAt: null }
+    where: { id: cropId, organisationId: orgId, deletedAt: null }
   });
   
   if (!existingCrop) throw new ApiError(404, "Crop not found or already deleted");
@@ -89,7 +85,8 @@ const updateCropPrice = AsyncHandler(async (req: Request, res: Response) => {
   sseObj.broadCastToServer("crop_price_update", {
     message: `crop ${updatedPrice.cropName} price updated to ${newPriceInPaise} paise.`,
   });
+  
   return res.status(200).json(new ApiResponse(200, updatedPrice, "Price updated successfully"));
 });
 
-export { add_crop, removeCrop, getListedCrop, updateCropPrice };
+export { addOrgCrop, removeOrgCrop, getListedOrgCrop, updateOrgCropPrice };

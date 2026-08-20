@@ -42,6 +42,8 @@ model Vyapari {
   lat           Float?
   long          Float?
   gstNumber     String?
+  gsLoginId     String?               @unique
+  gsPassword    String?
   refreshToken  String?
   kisans        KisanVyapari[]
   organisations OrganisationVyapari[]
@@ -64,6 +66,8 @@ model Organisation {
   lat          Float?
   long         Float?
   gstNumber     String?
+  gsLoginId     String?               @unique
+  gsPassword    String?
   refreshToken String?
   kisans       KisanOrganisation[]
   buyers       OrganisationOrganisation[] @relation("OrgBuy")
@@ -164,7 +168,166 @@ model RegistrationTaskTicket {
   status      TicketStatus @default(PENDING)
   
   employeeId  Int?     
+  admin       Admin?       @relation(fields: [employeeId], references: [id])
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+enum AdminRole {
+  ADMIN
+  SUPER_ADMIN
+}
+
+model Admin {
+  id          Int      @id @default(autoincrement())
+  name        String
+  phone       String   @unique
+  email       String   @unique
+  password    String
+  gsLoginId   String?  @unique
+  refreshToken String?
+  role        AdminRole @default(ADMIN)
+  isActive    Boolean  @default(true)
+  createdBy   Int?
+  superAdmin  SuperAdmin? @relation(fields: [createdBy], references: [id])
+  tickets     RegistrationTaskTicket[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SuperAdmin {
+  id          Int      @id @default(autoincrement())
+  name        String
+  phone       String   @unique
+  email       String   @unique
+  password    String
+  creds       String?
+  refreshToken String?
+  admins      Admin[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum ContractStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum SellContractStatus {
+  ACTIVE
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+enum SenderRole {
+  KISAAN
+  VYAPARI
+  ORGANISATION
+}
+
+enum ReceiverRole {
+  VYAPARI
+  ORGANISATION
+}
+
+model GsContract {
+  id               Int            @id @default(autoincrement())
+  cropName         String
+  quantity         Float
+  pricePerQuintal  Int
+  totalAmount      Float
+  senderId         Int
+  senderRole       SenderRole
+  receiverId       Int
+  receiverRole     ReceiverRole
+  status           ContractStatus @default(PENDING)
+  expiresAt        DateTime
+  message          String?
+  sellContract     SellContract?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model SellContract {
+  id               Int                @id @default(autoincrement())
+  gsContractId     Int                @unique
+  gsContract       GsContract         @relation(fields: [gsContractId], references: [id])
+  cropName         String
+  quantity         Float
+  pricePerQuintal  Int
+  totalAmount      Float
+  sellerId         Int
+  buyerId          Int
+  status           SellContractStatus @default(ACTIVE)
+  printedAt        DateTime?
+  completedAt      DateTime?
+  chatRooms        ChatRoom[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+model ChatRoom {
+  id               Int            @id @default(autoincrement())
+  sellContractId   Int
+  sellContract     SellContract   @relation(fields: [sellContractId], references: [id])
+  messages         ChatMessage[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+}
+
+model ChatMessage {
+  id               Int            @id @default(autoincrement())
+  roomId           Int
+  room             ChatRoom       @relation(fields: [roomId], references: [id])
+  senderId         Int
+  content          String?
+  type             MessageType    @default(TEXT)
+  fileUrl          String?
+  createdAt        DateTime       @default(now())
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum DocumentType {
+  GST
+  AADHAR
+  PAN
+  TRADE_LICENSE
+}
+
+model Document {
+  id               Int            @id @default(autoincrement())
+  userId           Int
+  userRole         SenderRole
+  fileUrl          String
+  fileType         DocumentType
+  status           DocumentStatus @default(PENDING)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model Notification {
+  id               Int            @id @default(autoincrement())
+  userId           Int
+  userRole         SenderRole
+  type             String
+  title            String
+  body             String
+  isRead           Boolean        @default(false)
+  createdAt        DateTime       @default(now())
 }

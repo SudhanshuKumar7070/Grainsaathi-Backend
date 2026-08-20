@@ -6,7 +6,7 @@ import prisma from "../lib/prisma.js";
 
 interface JwtPayload {
   user_id: number;
-  role: "kisaan" | "vyapari" | "organisation";
+  role: "kisaan" | "vyapari" | "organisation" | "admin" | "superadmin";
 }
 
 const verifyJwt = AsyncHandler(
@@ -32,6 +32,10 @@ const verifyJwt = AsyncHandler(
       user = await prisma.kisaan.findUnique({ where: { id: current_id } });
     } else if (role === "organisation") {
       user = await prisma.organisation.findUnique({ where: { id: current_id } });
+    } else if (role === "admin") {
+      user = await prisma.admin.findUnique({ where: { id: current_id } });
+    } else if (role === "superadmin") {
+      user = await prisma.superAdmin.findUnique({ where: { id: current_id } });
     }
 
     if (!user)

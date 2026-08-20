@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { Prisma } from "@prisma/client";
 import prisma from "../lib/prisma.js";
 import { AsyncHandler } from "../utils/AsynHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
@@ -10,6 +11,10 @@ const getCropsOnDistance = AsyncHandler(async (req: Request, res: Response) => {
   const cropName = Array.isArray(cropNameParam) ? cropNameParam[0] : cropNameParam;
   const maxPrice = req.query.maxPrice ? Number(req.query.maxPrice) : null;
   const minPrice = req.query.minPrice ? Number(req.query.minPrice) : null;
+  
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 20;
+  const offset = (page - 1) * limit;
 
   if (!cropName || typeof cropName !== "string" || !cropName.trim())
     throw new ApiError(400, "crop name is not available");
@@ -20,6 +25,9 @@ const getCropsOnDistance = AsyncHandler(async (req: Request, res: Response) => {
   if (isNaN(lat) || isNaN(long)) throw new ApiError(400, "Invalid coordinates");
   if (!req.user || !req.user.id)
     throw new ApiError(401, "user not authenticated");
+
+  const minPriceCond = minPrice !== null ? Prisma.sql`AND cr."priceInPaise" >= ${minPrice}` : Prisma.empty;
+  const maxPriceCond = maxPrice !== null ? Prisma.sql`AND cr."priceInPaise" <= ${maxPrice}` : Prisma.empty;
 
   const crops: any[] = await prisma.$queryRaw`
 SELECT
@@ -37,9 +45,9 @@ SELECT
     )
   ) AS distance
 FROM (
-    SELECT id, lat, long, 'organisation' AS type FROM "Organisation"
+    SELECT id, lat, long, 'organisation' AS type FROM "Organisation" WHERE lat IS NOT NULL AND long IS NOT NULL
     UNION ALL
-    SELECT id, lat, long, 'trader' AS type FROM "Vyapari"
+    SELECT id, lat, long, 'trader' AS type FROM "Vyapari" WHERE lat IS NOT NULL AND long IS NOT NULL
 ) AS buyers
 
 JOIN "Crops" cr
@@ -49,11 +57,13 @@ JOIN "Crops" cr
   )
 
 WHERE cr."cropName" = ${cropName}
-AND (${maxPrice} IS NULL OR cr."priceInPaise" <= ${maxPrice})
-AND (${minPrice} IS NULL OR cr."priceInPaise" >= ${minPrice})
+  AND cr."deletedAt" IS NULL
+  ${minPriceCond}
+  ${maxPriceCond}
 GROUP BY buyers.id, buyers.type, buyers.lat, buyers.long
 ORDER BY distance ASC
-LIMIT 20;
+LIMIT ${limit}
+OFFSET ${offset};
 `;
   if (!crops.length)
     throw new ApiError(

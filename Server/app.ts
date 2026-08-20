@@ -21,12 +21,16 @@ import authRoute from "./Route/auth.routes.js";
 import traderRoute from "./Route/trader.route.js";
 import farmerRoute from "./Route/farmers.route.js";
 import orgRoute from "./Route/organisation.route.js";
+import superAdminRoute from "./Route/superadmin.route.js";
+import contractRoute from "./Route/contract.route.js";
 import sseRoute from "./Route/sse/test_send_events.js";
 
 app.use("/api/v1/auth", authRoute);
 app.use("/api/v1/trader", traderRoute);
 app.use("/api/v1/farmer", farmerRoute);
 app.use("/api/v1/org", orgRoute);
+app.use("/api/v1/superadmin", superAdminRoute);
+app.use("/api/v1/contracts", contractRoute);
 app.use("/sse_event", sseRoute);
 
 // Global Error Handler

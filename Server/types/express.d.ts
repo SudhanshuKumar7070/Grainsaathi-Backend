@@ -1,9 +1,9 @@
-import { Kisaan, Vyapari, Organisation } from "@prisma/client";
+import { Kisaan, Vyapari, Organisation, Admin, SuperAdmin } from "@prisma/client";
 
 declare global {
   namespace Express {
     interface Request {
-      user?: Kisaan | Vyapari | Organisation | null;
+      user?: Kisaan | Vyapari | Organisation | Admin | SuperAdmin | null;
       userRole?: "kisaan" | "vyapari" | "organisation" | "admin" | "superadmin";
     }
   }
